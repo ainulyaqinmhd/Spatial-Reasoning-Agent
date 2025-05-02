@@ -8,6 +8,6 @@ soundfile
 pyttsx3
 requests
 vosk
-whisper
 opencv-python
 scipy
+openai-whisper
