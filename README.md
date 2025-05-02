@@ -13,14 +13,13 @@ A Gradio‐based chatbot that combines image analysis, speech recognition, and T
 
 1. Clone this repo:
    ```
-   bash
    git clone https://github.com/ainulyaqinmhd/Spatial-Reasoning-Agent.git
-   cd your-repo
+   cd Spatial-Reasoning-Agent
    ````
 
 2. Create a virtual environment and install dependencies:
 
-   ```bash
+   ```
    python3 -m venv .venv
    source .venv/bin/activate   # on Windows: .\.venv\Scripts\activate
    pip install -r requirements.txt
@@ -28,14 +27,14 @@ A Gradio‐based chatbot that combines image analysis, speech recognition, and T
 
 3. (Optional) Set environment variables for ElevenLabs:
 
-   ```bash
+   ```
    export ELEVENLABS_API_KEY="your_key_here"
    export RECOGNITION_ENGINE="auto"  # or "whisper", "vosk", "google"
    ```
 
 ## Usage
 
-```bash
+```
 python app.py
 ```
 
