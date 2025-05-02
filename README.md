@@ -14,7 +14,7 @@ A Gradio‐based chatbot that combines image analysis, speech recognition, and T
 1. Clone this repo:
    ```
    bash
-   git clone https://github.com/your-username/your-repo.git
+   git clone https://github.com/ainulyaqinmhd/Spatial-Reasoning-Agent.git
    cd your-repo
    ````
 
