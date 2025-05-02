@@ -609,9 +609,15 @@ try:
     import whisper
 
     WHISPER_AVAILABLE = True
-    # Load a small model by default
-    WHISPER_MODEL = whisper.load_model("tiny")
-    logger.info("Whisper model loaded successfully")
+    try:
+        # Load a small model by default
+        WHISPER_MODEL = whisper.load_model("tiny")
+        logger.info("Whisper model loaded successfully")
+    except AttributeError:
+        WHISPER_AVAILABLE = False
+        logger.error(
+            "Whisper module does not have 'load_model'. Please ensure you have installed the correct OpenAI whisper package: 'pip install -U openai-whisper'"
+        )
 except ImportError:
     WHISPER_AVAILABLE = False
     logger.warning(
@@ -1430,4 +1436,4 @@ if __name__ == "__main__":
     logger.info(f"Available speech recognition engines: {', '.join(available_engines)}")
 
     # Launch the app
-    demo.launch(share=True)
+    demo.launch(share=False)
