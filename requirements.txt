@@ -1,0 +1,13 @@
+gradio
+Pillow
+numpy
+gTTS
+pygame
+SpeechRecognition
+soundfile
+pyttsx3
+requests
+vosk
+whisper
+opencv-python
+scipy
