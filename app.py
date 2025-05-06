@@ -30,15 +30,17 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # Initialize pygame mixer for audio playback
 pygame.mixer.init()
 
-# Initialize speech recognizer with more robust settings
+# Initialize speech recognizer with more robust settings and comments explaining each parameter
 recognizer = sr.Recognizer()
-recognizer.energy_threshold = 300  # Adjust based on your microphone/environment
-recognizer.dynamic_energy_threshold = True
-recognizer.pause_threshold = 1.0  # Increased from 0.8 to 1.0 seconds
-recognizer.phrase_threshold = 0.3
-recognizer.non_speaking_duration = 0.8  # Increased from 0.5 to 0.8
+recognizer.energy_threshold = 100  # Adjust based on your microphone/environment. Lower values may detect quieter sounds, while higher values may require louder input.
+recognizer.dynamic_energy_threshold = True  # Enable dynamic energy threshold to adjust the recognizer's sensitivity automatically.
+recognizer.pause_threshold = 1.0  # Increased from 0.8 to 1.0 seconds. This parameter determines how long of a pause is considered the end of a phrase.
+recognizer.phrase_threshold = 0.3  # Adjusts how confident the recognizer must be before considering a partial match as a complete phrase.
+recognizer.non_speaking_duration = 0.8  # Increased from 0.5 to 0.8. This parameter determines how long of a non-speech segment is considered part of the previous speech.
 # Add adjustable language for international support
-SPEECH_LANGUAGE = "en-US"  # Default to English
+SPEECH_LANGUAGE = (
+    "en-US"  # Default to English, but this can be changed to support other languages.
+)
 
 # Store conversation context
 conversation_context = {
@@ -468,7 +470,7 @@ def analyze_image(image, history):
 
 
 # New function to send both text and image to Ollama with Gemma3
-def ask_ollama_with_image(prompt, image_path, model="gemma3", system_prompt=None):
+def ask_ollama_with_image(prompt, image_path, model="llava", system_prompt=None):
     """
     Send multimodal prompt (text + image) to Ollama using Gemma3 vision model
     """
@@ -1436,4 +1438,4 @@ if __name__ == "__main__":
     logger.info(f"Available speech recognition engines: {', '.join(available_engines)}")
 
     # Launch the app
-    demo.launch(share=False)
+    demo.launch(share=True)

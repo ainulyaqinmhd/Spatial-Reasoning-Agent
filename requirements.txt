@@ -11,3 +11,4 @@ vosk
 opencv-python
 scipy
 openai-whisper
+PyAudio
