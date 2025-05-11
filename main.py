@@ -127,33 +127,30 @@ def start_tts_thread():
         logger.info("TTS thread started")
 
 
-# Enhanced speak_text function with multiple TTS options
 def speak_text(text, interrupt=True):
     """Speak text using the configured TTS engine"""
     global tts_engine, tts_thread_active, tts_type
-
     if not text or text.strip() == "":
         return
-
-    # Limit text length for more responsive interaction
-    if len(text) > 500:
-        text = text[:497] + "..."
-
     # Option to interrupt current speech
     if interrupt and pygame.mixer.music.get_busy():
         pygame.mixer.music.stop()
-
     # Start TTS thread if not active
     if not tts_thread_active:
         start_tts_thread()
 
-    # Add to queue based on engine type
-    if tts_type == "pyttsx3":
-        tts_queue.put(("pyttsx3", text))
-    elif tts_type == "elevenlabs":
-        tts_queue.put(("elevenlabs", text))
-    else:
-        tts_queue.put(("gtts", text))
+    # Split long texts into manageable chunks
+    chunk_size = 500
+    chunks = [text[i : i + chunk_size] for i in range(0, len(text), chunk_size)]
+
+    for chunk in chunks:
+        # Add to queue based on engine type
+        if tts_type == "pyttsx3":
+            tts_queue.put(("pyttsx3", chunk))
+        elif tts_type == "elevenlabs":
+            tts_queue.put(("elevenlabs", chunk))
+        else:
+            tts_queue.put(("gtts", chunk))
 
     logger.info(f"Added text to TTS queue: {text[:50]}..." if len(text) > 50 else text)
 
@@ -290,7 +287,7 @@ def ask_ollama(prompt, model="gemma3", system_prompt=None):
             input=input_str.encode(),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=30,
+            timeout=240,
         )
         response = result.stdout.decode()
         logger.info("STDOUT: %s", response)
@@ -306,7 +303,7 @@ def generate_spatial_prompt(image_description: str):
     return f"""
 You are analyzing an architectural or spatial design sketch. The image shows a spatial structure or design, and I need you to analyze it carefully. Be precise about what you can actually see, not what you imagine could be there.
 
-Focus on:
+Focus on (Keep the answer no more than 150 words to maintain the flow of conversation):
 1. Basic geometric elements visible in the image (lines, planes, volumes)
 2. Spatial relationships between elements
 3. Any visible textures, materials, or surface treatments
@@ -315,9 +312,10 @@ Focus on:
 
 If you can identify the likely type of structure or design (e.g., building, interior space, furniture), explain what visual elements support that identification.
 
-After your analysis, provide suggestions for how this design could be modeled in 3D using Gravity Sketch VR, focusing on the approach to constructing the main elements.
+After your analysis, ask whether it is necessary to provide suggestions for how this design could be modeled in 3D using Gravity Sketch VR, focusing on the approach to constructing the main elements.
 
 Keep your response conversational, engaging, and educational - as if you're a helpful spatial reasoning tutor guiding a student.
+
 """
 
 
@@ -341,6 +339,8 @@ You are a specialized spatial reasoning tutor with expertise in architectural vi
    - Patient with spatial learning challenges
 
 Maintain a balance between technical precision and conversational engagement in your responses.
+
+Keep the answer no more than 150 words to maintain the flow of conversation.
 """
 
 # Define conversation system prompt
@@ -470,7 +470,9 @@ def analyze_image(image, history):
 
 
 # New function to send both text and image to Ollama with Gemma3
-def ask_ollama_with_image(prompt, image_path, model="llava", system_prompt=None):
+def ask_ollama_with_image(
+    prompt, image_path, model="llama3.2-vision", system_prompt=None
+):
     """
     Send multimodal prompt (text + image) to Ollama using Gemma3 vision model
     """
@@ -895,6 +897,7 @@ def transcribe_audio(audio_path=None, audio_data=None):
         # The rest of the function remains the same as your original code,
         # except when using Whisper with direct audio data:
         if engine_to_use == "whisper" and WHISPER_AVAILABLE:
+            temp_filename = None
             if not audio_path:
                 # Save audio data to temporary file for Whisper
                 temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
@@ -1024,6 +1027,19 @@ def transcribe_audio(audio_path=None, audio_data=None):
 # Voice agent command handler
 def process_voice_command(command, image_input, history_state):
     """Process voice commands with special handling for control commands"""
+
+    # Guard clause: ensure command is a string and not None
+    if not isinstance(command, str) or command is None:
+        logger.warning("Received invalid command input: %s", command)
+        return history_state, "", history_state
+
+    # If command is a file path (audio file), transcribe it first
+    if command.endswith(".wav") or command.endswith(".mp3") or command.endswith(".m4a"):
+        transcribed_text = transcribe_audio(audio_path=command)
+        if not transcribed_text or transcribed_text.strip() == "":
+            speak_text("I couldn't understand the audio. Please try again.")
+            return history_state, "", history_state
+        command = transcribed_text
 
     # Check for control commands
     if any(x in command.lower() for x in ["quit", "exit", "stop", "end"]):

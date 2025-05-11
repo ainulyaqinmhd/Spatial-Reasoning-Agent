@@ -127,7 +127,6 @@ def start_tts_thread():
         logger.info("TTS thread started")
 
 
-# Enhanced speak_text function with multiple TTS options
 def speak_text(text, interrupt=True):
     """Speak text using the configured TTS engine"""
     global tts_engine, tts_thread_active, tts_type
@@ -304,7 +303,7 @@ def generate_spatial_prompt(image_description: str):
     return f"""
 You are analyzing an architectural or spatial design sketch. The image shows a spatial structure or design, and I need you to analyze it carefully. Be precise about what you can actually see, not what you imagine could be there.
 
-Focus on:
+Focus on (Keep the answer no more than 150 words to maintain the flow of conversation):
 1. Basic geometric elements visible in the image (lines, planes, volumes)
 2. Spatial relationships between elements
 3. Any visible textures, materials, or surface treatments
@@ -313,9 +312,10 @@ Focus on:
 
 If you can identify the likely type of structure or design (e.g., building, interior space, furniture), explain what visual elements support that identification.
 
-After your analysis, provide suggestions for how this design could be modeled in 3D using Gravity Sketch VR, focusing on the approach to constructing the main elements.
+After your analysis, ask whether it is necessary to provide suggestions for how this design could be modeled in 3D using Gravity Sketch VR, focusing on the approach to constructing the main elements.
 
 Keep your response conversational, engaging, and educational - as if you're a helpful spatial reasoning tutor guiding a student.
+
 """
 
 
@@ -339,13 +339,15 @@ You are a specialized spatial reasoning tutor with expertise in architectural vi
    - Patient with spatial learning challenges
 
 Maintain a balance between technical precision and conversational engagement in your responses.
+
+Keep the answer no more than 150 words to maintain the flow of conversation.
 """
 
 # Define conversation system prompt
 CONVERSATION_SYSTEM_PROMPT = """
 You are an intelligent and helpful spatial reasoning tutor. Your goal is to assist users in understanding 3D spatial concepts, architectural principles, and help them translate 2D sketches into 3D thinking.
 
-When responding to queries keep it no more than 150 words:
+When responding to queries:
 1. Be precise but conversational in your explanations
 2. Reference specific visual elements if an image has been shared
 3. Provide educational insights that help develop spatial thinking
@@ -1024,6 +1026,19 @@ def transcribe_audio(audio_path=None, audio_data=None):
 # Voice agent command handler
 def process_voice_command(command, image_input, history_state):
     """Process voice commands with special handling for control commands"""
+
+    # Guard clause: ensure command is a string and not None
+    if not isinstance(command, str) or command is None:
+        logger.warning("Received invalid command input: %s", command)
+        return history_state, "", history_state
+
+    # If command is a file path (audio file), transcribe it first
+    if command.endswith(".wav") or command.endswith(".mp3") or command.endswith(".m4a"):
+        transcribed_text = transcribe_audio(audio_path=command)
+        if not transcribed_text or transcribed_text.strip() == "":
+            speak_text("I couldn't understand the audio. Please try again.")
+            return history_state, "", history_state
+        command = transcribed_text
 
     # Check for control commands
     if any(x in command.lower() for x in ["quit", "exit", "stop", "end"]):

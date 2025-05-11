@@ -12,3 +12,4 @@ opencv-python
 scipy
 openai-whisper
 PyAudio
+pydub
