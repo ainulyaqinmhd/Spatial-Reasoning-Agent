@@ -1278,7 +1278,7 @@ def transcribe_audio(audio_path=None, audio_data=None):
 
 
 # Voice agent command handler
-def process_voice_command(command, image_input, history_state):
+def process_voice_command(command, image_input, history_state, iterdrag_mode):
     """Process voice commands with special handling for control commands"""
 
     # Guard clause: ensure command is a string and not None
@@ -1319,7 +1319,7 @@ def process_voice_command(command, image_input, history_state):
         return history_state, "", history_state
 
     # Process as normal message if not a control command
-    return chatbot_interface(image_input, command, history_state)
+    return chatbot_interface(image_input, command, history_state, iterdrag_mode)
 
 
 # Add continuous listening toggle to UI
@@ -1675,7 +1675,7 @@ with demo:
     )
     audio_input.change(
         process_voice_command,
-        [audio_input, image_input, history_state],
+        [audio_input, image_input, history_state, iterdrag_mode_state],
         [chatbot, text_input, history_state],
     )
     clear_btn.click(

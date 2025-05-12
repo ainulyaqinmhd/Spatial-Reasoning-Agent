@@ -132,8 +132,12 @@ def start_tts_thread():
 
 def speak_text(text, interrupt=True):
     """Speak text using the configured TTS engine"""
-    global tts_engine, tts_thread_active, tts_type
+    global tts_engine, tts_thread_active, tts_type, tts_active
     if not text or text.strip() == "":
+        return
+    # Check if TTS is active
+    if not tts_active:
+        logger.info("TTS is currently deactivated; skipping speak_text call.")
         return
     # Option to interrupt current speech
     if interrupt and pygame.mixer.music.get_busy():
@@ -1278,7 +1282,7 @@ def transcribe_audio(audio_path=None, audio_data=None):
 
 
 # Voice agent command handler
-def process_voice_command(command, image_input, history_state):
+def process_voice_command(command, image_input, history_state, iterdrag_mode):
     """Process voice commands with special handling for control commands"""
 
     # Guard clause: ensure command is a string and not None
@@ -1319,7 +1323,7 @@ def process_voice_command(command, image_input, history_state):
         return history_state, "", history_state
 
     # Process as normal message if not a control command
-    return chatbot_interface(image_input, command, history_state)
+    return chatbot_interface(image_input, command, history_state, iterdrag_mode)
 
 
 # Add continuous listening toggle to UI
@@ -1478,238 +1482,276 @@ with demo:
     history_state = gr.State([])
     voice_mode_state = gr.State(False)
     iterdrag_mode_state = gr.State(False)  # New state for iterDRAG mode
+    # Remove gr.State for TTS active state; use global Python variable instead
+    # tts_active_state = gr.State(True)  # New state for TTS active/inactive
 
-    gr.Markdown("## 🧠 Spatial Reasoning Voice Assistant", elem_classes=["header"])
+# Add global Python variable for TTS active state
+tts_active = True
 
-    with gr.Row():
-        with gr.Column(scale=1):
-            image_input = gr.Image(
-                type="pil",
-                label="Upload your sketch (JPG/PNG)",
-                height=450,
-                width="100%",
-            )
+gr.Markdown("## 🧠 Spatial Reasoning Voice Assistant", elem_classes=["header"])
 
-            # Voice agent controls section
-            with gr.Group(elem_classes=["voice-controls"]):
-                gr.Markdown("### 🎙️ Voice Assistant Controls")
-
-                with gr.Row():
-                    voice_toggle = gr.Checkbox(
-                        label="Activate Voice Assistant",
-                        value=False,
-                        info="Toggle always-listening mode",
-                    )
-                    iterdrag_toggle = gr.Checkbox(
-                        label="Activate IterDRAG Research Mode",
-                        value=False,
-                        info="Toggle iterative deep research mode",
-                    )
-
-                    # Display current status with indicator light
-                    voice_status = gr.Markdown(
-                        '<span class="status-light inactive"></span> Voice assistant is inactive',
-                        elem_classes=["voice-status-indicator"],
-                    )
-                    iterdrag_status = gr.Markdown(
-                        '<span class="status-light inactive"></span> IterDRAG mode is inactive',
-                        elem_classes=["iterdrag-status-indicator"],
-                    )
-
-                with gr.Row():
-                    wake_word_text = gr.Textbox(
-                        label="Wake Word",
-                        value="Hey Spatial",
-                        info="The phrase to activate the assistant (in always-listening mode)",
-                    )
-
-                    tts_voice_selector = gr.Dropdown(
-                        label="Assistant Voice",
-                        choices=[
-                            "Default Female",
-                            "Default Male",
-                            "Premium (ElevenLabs)",
-                        ],
-                        value="Default Female",
-                        info="Select the voice for text-to-speech",
-                    )
-
-                gr.Markdown(
-                    """
-                **Voice Commands:**
-                - "Hey Spatial, analyze this sketch"
-                - "Hey Spatial, what do you see in this image?"
-                - "Hey Spatial, clear the conversation"
-                """
-                )
-
-            with gr.Row():
-                download_btn = gr.Button("💾 Save Conversation")
-                clear_btn = gr.Button("🧼 New Conversation")
-                test_mic_btn = gr.Button("🔊 Test Microphone")
-
-            # Speech recognition engine selector
-            speech_engine = gr.Radio(
-                choices=["Auto", "Google", "Vosk (offline)", "Whisper (offline)"],
-                value="Auto",
-                label="Speech Recognition Engine",
-                info="Choose which speech recognition system to use",
-            )
-
-        with gr.Column(scale=2, elem_classes=["conversation-container"]):
-            chatbot = gr.Chatbot(
-                label="Conversation",
-                type="messages",
-                height=450,
-                show_label=False,
-                elem_id="chatbox",
-                render=True,  # Important for real-time updates
-            )
-            with gr.Row():
-                text_input = gr.Textbox(
-                    placeholder="Type your message or ask a question...",
-                    show_label=False,
-                    scale=5,
-                )
-                audio_input = gr.Microphone(
-                    label="🎙️",
-                    type="filepath",
-                    interactive=True,
-                    streaming=False,
-                    scale=1,
-                )
-
-            mic_status = gr.Textbox(
-                label="Voice Recognition Status",
-                value="Click 'Test Microphone' to check if your microphone is working",
-                interactive=False,
-                elem_classes=["mic-status"],
-            )
-
-    # Initialize chat with welcome message
-    demo.load(initialize_chat, [], chatbot)
-
-    # Toggle continuous voice listening mode
-    voice_toggle.change(
-        toggle_voice_listener, [voice_toggle, history_state], [history_state]
-    )
-    iterdrag_toggle.change(
-        lambda active: active, [iterdrag_toggle], [iterdrag_mode_state]
-    )
-
-    # Update voice status indicator styling
-    voice_toggle.change(
-        lambda active: f'<span class="status-light {"active" if active else "inactive"}"></span> Voice assistant is {"active" if active else "inactive"}',
-        [voice_toggle],
-        [voice_status],
-    )
-    iterdrag_toggle.change(
-        lambda active: f'<span class="status-light {"active" if active else "inactive"}"></span> IterDRAG mode is {"active" if active else "inactive"}',
-        [iterdrag_toggle],
-        [iterdrag_status],
-    )
-
-    # Handle voice assistant parameters
-    def update_voice_assistant_params(wake_word, voice_type):
-        global voice_listener, tts_voice_type
-
-        # Update wake word if voice listener exists
-        if hasattr(globals(), "voice_listener") and voice_listener:
-            # Extract wake word and add variations
-            base_wake = wake_word.lower().strip()
-            voice_listener.wake_words = [
-                base_wake,
-                f"hey {base_wake}",
-                f"{base_wake} assistant",
-            ]
-
-        # Update TTS voice
-        voice_map = {
-            "Default Female": {"engine": "pyttsx3", "voice_id": 1},
-            "Default Male": {"engine": "pyttsx3", "voice_id": 0},
-            "Premium (ElevenLabs)": {"engine": "elevenlabs", "voice_id": "default"},
-        }
-
-        tts_voice_type = voice_map.get(
-            voice_type, {"engine": "gtts", "voice_id": "default"}
+with gr.Row():
+    with gr.Column(scale=1):
+        image_input = gr.Image(
+            type="pil",
+            label="Upload your sketch (JPG/PNG)",
+            height=450,
+            width="100%",
         )
 
-        # Apply voice setting if using pyttsx3
-        try:
-            if tts_voice_type["engine"] == "pyttsx3" and hasattr(
-                globals(), "tts_engine"
-            ):
-                voices = tts_engine.getProperty("voices")
-                if len(voices) > tts_voice_type["voice_id"]:
-                    tts_engine.setProperty(
-                        "voice", voices[tts_voice_type["voice_id"]].id
-                    )
-        except Exception as e:
-            logger.error(f"Error setting voice: {e}")
+        # Voice agent controls section
+        with gr.Group(elem_classes=["voice-controls"]):
+            gr.Markdown("### 🎙️ Voice Assistant Controls")
 
-        return f"Updated: Wake word set to '{wake_word}' and voice to '{voice_type}'"
+            with gr.Row():
+                voice_toggle = gr.Checkbox(
+                    label="Activate Voice Assistant",
+                    value=False,
+                    info="Toggle always-listening mode",
+                )
+                iterdrag_toggle = gr.Checkbox(
+                    label="Activate IterDRAG Research Mode",
+                    value=False,
+                    info="Toggle iterative deep research mode",
+                )
+        tts_toggle = gr.Checkbox(
+            label="Activate Text-to-Speech",
+            value=True,
+            info="Toggle text-to-speech output",
+        )
 
-    # Connect wake word and voice selection
-    wake_word_text.change(
-        update_voice_assistant_params,
-        [wake_word_text, tts_voice_selector],
-        [mic_status],
+    # Display current status with indicator light
+    voice_status = gr.Markdown(
+        '<span class="status-light inactive"></span> Voice assistant is inactive',
+        elem_classes=["voice-status-indicator"],
+    )
+    iterdrag_status = gr.Markdown(
+        '<span class="status-light inactive"></span> IterDRAG mode is inactive',
+        elem_classes=["iterdrag-status-indicator"],
+    )
+    tts_status = gr.Markdown(
+        '<span class="status-light active"></span> Text-to-Speech is active',
+        elem_classes=["tts-status-indicator"],
     )
 
-    tts_voice_selector.change(
-        update_voice_assistant_params,
-        [wake_word_text, tts_voice_selector],
-        [mic_status],
+    with gr.Row():
+        wake_word_text = gr.Textbox(
+            label="Wake Word",
+            value="Hey Spatial",
+            info="The phrase to activate the assistant (in always-listening mode)",
+        )
+
+        tts_voice_selector = gr.Dropdown(
+            label="Assistant Voice",
+            choices=[
+                "Default Female",
+                "Default Male",
+                "Premium (ElevenLabs)",
+            ],
+            value="Default Female",
+            info="Select the voice for text-to-speech",
+        )
+
+        gr.Markdown(
+            """
+            **Voice Commands:**
+            - "Hey Spatial, analyze this sketch"
+            - "Hey Spatial, what do you see in this image?"
+            - "Hey Spatial, clear the conversation"
+            """
+        )
+
+        with gr.Row():
+            download_btn = gr.Button("💾 Save Conversation")
+            clear_btn = gr.Button("🧼 New Conversation")
+            test_mic_btn = gr.Button("🔊 Test Microphone")
+
+        # Speech recognition engine selector
+        speech_engine = gr.Radio(
+            choices=["Auto", "Google", "Vosk (offline)", "Whisper (offline)"],
+            value="Auto",
+            label="Speech Recognition Engine",
+            info="Choose which speech recognition system to use",
+        )
+
+    with gr.Column(scale=2, elem_classes=["conversation-container"]):
+        chatbot = gr.Chatbot(
+            label="Conversation",
+            type="messages",
+            height=450,
+            show_label=False,
+            elem_id="chatbox",
+            render=True,  # Important for real-time updates
+        )
+        with gr.Row():
+            text_input = gr.Textbox(
+                placeholder="Type your message or ask a question...",
+                show_label=False,
+                scale=5,
+            )
+            audio_input = gr.Microphone(
+                label="🎙️",
+                type="filepath",
+                interactive=True,
+                streaming=False,
+                scale=1,
+            )
+
+        mic_status = gr.Textbox(
+            label="Voice Recognition Status",
+            value="Click 'Test Microphone' to check if your microphone is working",
+            interactive=False,
+            elem_classes=["mic-status"],
+        )
+
+# Initialize chat with welcome message
+demo.load(initialize_chat, [], chatbot)
+
+# Toggle continuous voice listening mode
+voice_toggle.change(
+    toggle_voice_listener, [voice_toggle, history_state], [history_state]
+)
+iterdrag_toggle.change(lambda active: active, [iterdrag_toggle], [iterdrag_mode_state])
+
+# Update voice status indicator styling
+voice_toggle.change(
+    lambda active: f'<span class="status-light {"active" if active else "inactive"}"></span> Voice assistant is {"active" if active else "inactive"}',
+    [voice_toggle],
+    [voice_status],
+)
+iterdrag_toggle.change(
+    lambda active: f'<span class="status-light {"active" if active else "inactive"}"></span> IterDRAG mode is {"active" if active else "inactive"}',
+    [iterdrag_toggle],
+    [iterdrag_status],
+)
+
+
+# Handle voice assistant parameters
+def update_voice_assistant_params(wake_word, voice_type):
+    global voice_listener, tts_voice_type
+
+    # Update wake word if voice listener exists
+    if hasattr(globals(), "voice_listener") and voice_listener:
+        # Extract wake word and add variations
+        base_wake = wake_word.lower().strip()
+        voice_listener.wake_words = [
+            base_wake,
+            f"hey {base_wake}",
+            f"{base_wake} assistant",
+        ]
+
+    # Update TTS voice
+    voice_map = {
+        "Default Female": {"engine": "pyttsx3", "voice_id": 1},
+        "Default Male": {"engine": "pyttsx3", "voice_id": 0},
+        "Premium (ElevenLabs)": {"engine": "elevenlabs", "voice_id": "default"},
+    }
+
+    tts_voice_type = voice_map.get(
+        voice_type, {"engine": "gtts", "voice_id": "default"}
     )
 
-    # Original connections
-    image_input.change(
-        analyze_image,
-        [image_input, history_state],
-        [chatbot, text_input, history_state],
-    )
-    text_input.submit(
-        chatbot_interface,
-        [image_input, text_input, history_state, iterdrag_mode_state],
-        [chatbot, text_input, history_state],
-    )
-    audio_input.change(
-        process_voice_command,
-        [audio_input, image_input, history_state],
-        [chatbot, text_input, history_state],
-    )
-    clear_btn.click(
-        lambda: ([], "", []),
-        [],
-        [chatbot, text_input, history_state],
-    )
-    download_btn.click(download_chat, [history_state], gr.File())
-    test_mic_btn.click(test_microphone, [], mic_status)
+    # Apply voice setting if using pyttsx3
+    try:
+        if tts_voice_type["engine"] == "pyttsx3" and hasattr(globals(), "tts_engine"):
+            voices = tts_engine.getProperty("voices")
+            if len(voices) > tts_voice_type["voice_id"]:
+                tts_engine.setProperty("voice", voices[tts_voice_type["voice_id"]].id)
+    except Exception as e:
+        logger.error(f"Error setting voice: {e}")
 
-    # Connect speech engine selection to recognition engine update
-    def update_speech_engine(choice):
-        global RECOGNITION_ENGINE
-        if choice == "Auto":
-            RECOGNITION_ENGINE = "auto"
-        elif choice == "Google":
-            RECOGNITION_ENGINE = "google"
-        elif choice == "Vosk (offline)":
-            RECOGNITION_ENGINE = "vosk"
-        elif choice == "Whisper (offline)":
-            RECOGNITION_ENGINE = "whisper"
+    return f"Updated: Wake word set to '{wake_word}' and voice to '{voice_type}'"
 
-        # Provide feedback about available engines
-        if RECOGNITION_ENGINE == "vosk" and not VOSK_AVAILABLE:
-            return "Vosk is not installed or model is missing. Please install vosk and download a model."
-        elif RECOGNITION_ENGINE == "whisper" and not WHISPER_AVAILABLE:
-            return "Whisper is not installed. Please install openai-whisper to use this engine."
-        else:
-            return f"Speech recognition set to: {choice}"
 
-    speech_engine.change(update_speech_engine, speech_engine, mic_status)
+# Connect wake word and voice selection
+wake_word_text.change(
+    update_voice_assistant_params,
+    [wake_word_text, tts_voice_selector],
+    [mic_status],
+)
 
-    # Register cleanup function
-    atexit.register(on_close)
+tts_voice_selector.change(
+    update_voice_assistant_params,
+    [wake_word_text, tts_voice_selector],
+    [mic_status],
+)
+
+
+# New connection for TTS toggle
+def toggle_tts(active, history, chatbot_data):
+    global tts_active
+    tts_active = active
+    status_text = (
+        '<span class="status-light active"></span> Text-to-Speech is active'
+        if active
+        else '<span class="status-light inactive"></span> Text-to-Speech is inactive'
+    )
+    # If reactivated, speak the last assistant message
+    if active and chatbot_data and len(chatbot_data) > 0:
+        # Find last assistant message
+        for msg in reversed(chatbot_data):
+            if msg["role"] == "assistant" and msg["content"].strip():
+                speak_text(msg["content"])
+                break
+    return status_text, history
+
+
+tts_toggle.change(
+    toggle_tts,
+    [tts_toggle, history_state, chatbot],
+    [tts_status, history_state],
+)
+
+# Original connections
+image_input.change(
+    analyze_image,
+    [image_input, history_state],
+    [chatbot, text_input, history_state],
+)
+text_input.submit(
+    chatbot_interface,
+    [image_input, text_input, history_state, iterdrag_mode_state],
+    [chatbot, text_input, history_state],
+)
+audio_input.change(
+    process_voice_command,
+    [audio_input, image_input, history_state, iterdrag_mode_state],
+    [chatbot, text_input, history_state],
+)
+clear_btn.click(
+    lambda: ([], "", []),
+    [],
+    [chatbot, text_input, history_state],
+)
+download_btn.click(download_chat, [history_state], gr.File())
+test_mic_btn.click(test_microphone, [], mic_status)
+
+
+# Connect speech engine selection to recognition engine update
+def update_speech_engine(choice):
+    global RECOGNITION_ENGINE
+    if choice == "Auto":
+        RECOGNITION_ENGINE = "auto"
+    elif choice == "Google":
+        RECOGNITION_ENGINE = "google"
+    elif choice == "Vosk (offline)":
+        RECOGNITION_ENGINE = "vosk"
+    elif choice == "Whisper (offline)":
+        RECOGNITION_ENGINE = "whisper"
+
+    # Provide feedback about available engines
+    if RECOGNITION_ENGINE == "vosk" and not VOSK_AVAILABLE:
+        return "Vosk is not installed or model is missing. Please install vosk and download a model."
+    elif RECOGNITION_ENGINE == "whisper" and not WHISPER_AVAILABLE:
+        return "Whisper is not installed. Please install openai-whisper to use this engine."
+    else:
+        return f"Speech recognition set to: {choice}"
+
+
+speech_engine.change(update_speech_engine, speech_engine, mic_status)
+
+# Register cleanup function
+atexit.register(on_close)
 
 if __name__ == "__main__":
     start_tts_thread()  # Make sure TTS is ready
