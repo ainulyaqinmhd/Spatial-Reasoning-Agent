@@ -13,3 +13,4 @@ scipy
 openai-whisper
 PyAudio
 pydub
+googlesearch-python

@@ -287,7 +287,7 @@ def ask_ollama(prompt, model="gemma3", system_prompt=None):
             input=input_str.encode(),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=30,
+            timeout=240,
         )
         response = result.stdout.decode()
         logger.info("STDOUT: %s", response)
@@ -897,6 +897,7 @@ def transcribe_audio(audio_path=None, audio_data=None):
         # The rest of the function remains the same as your original code,
         # except when using Whisper with direct audio data:
         if engine_to_use == "whisper" and WHISPER_AVAILABLE:
+            temp_filename = None
             if not audio_path:
                 # Save audio data to temporary file for Whisper
                 temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
