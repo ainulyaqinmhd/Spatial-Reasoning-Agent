@@ -713,7 +713,9 @@ def analyze_image(image, history):
 
 
 # New function to send both text and image to Ollama with Gemma3
-def ask_ollama_with_image(prompt, image_path, model="llava", system_prompt=None):
+def ask_ollama_with_image(
+    prompt, image_path, model="llama3.2-vision", system_prompt=None
+):
     """
     Send multimodal prompt (text + image) to Ollama using Gemma3 vision model
     """
