@@ -17,8 +17,6 @@ import soundfile as sf  # For audio file analysis
 import logging
 import requests  # Added for search API calls
 
-# from backup_code import generate_spatial_prompt
-
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -322,27 +320,6 @@ def perform_web_search(query, max_results=5):
     except Exception as e:
         logger.error(f"Exception during Google web search: {e}")
         return []
-
-
-# Generate better spatial reasoning prompts
-def generate_spatial_prompt(image_description: str):
-    return f"""
-You are analyzing an architectural or spatial design sketch. The image shows a spatial structure or design, and I need you to analyze it carefully. Be precise about what you can actually see, not what you imagine could be there.
-
-Focus on (Keep the answer no more than 150 words to maintain the flow of conversation):
-1. Basic geometric elements visible in the image (lines, planes, volumes)
-2. Spatial relationships between elements
-3. Any visible textures, materials, or surface treatments
-4. Perspective and depth cues
-5. Proportions and scale indicators
-
-If you can identify the likely type of structure or design (e.g., building, interior space, furniture), explain what visual elements support that identification.
-
-After your analysis, ask whether it is necessary to provide suggestions for how this design could be modeled in 3D using Gravity Sketch VR, focusing on the approach to constructing the main elements.
-
-Keep your response conversational, engaging, and educational - as if you're a helpful spatial reasoning tutor guiding a student.
-
-"""
 
 
 CONVERSATION_SYSTEM_PROMPT = """
@@ -713,7 +690,9 @@ def analyze_image(image, history):
 
 
 # New function to send both text and image to Ollama with Gemma3
-def ask_ollama_with_image(prompt, image_path, model="llava", system_prompt=None):
+def ask_ollama_with_image(
+    prompt, image_path, model="llama3.2-vision", system_prompt=None
+):
     """
     Send multimodal prompt (text + image) to Ollama using Gemma3 vision model
     """
@@ -1544,7 +1523,7 @@ with demo:
                 with gr.Row():
                     wake_word_text = gr.Textbox(
                         label="Wake Word",
-                        value="Hey Assistant",
+                        value="Hey Spatial",
                         info="The phrase to activate the assistant (in always-listening mode)",
                     )
 
