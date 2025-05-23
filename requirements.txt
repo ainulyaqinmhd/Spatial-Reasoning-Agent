@@ -14,3 +14,6 @@ openai-whisper
 PyAudio
 pydub
 googlesearch-python
+torch
+transformers
+sentencepiece

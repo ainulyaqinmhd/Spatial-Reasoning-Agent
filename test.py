@@ -17,6 +17,17 @@ import soundfile as sf  # For audio file analysis
 import logging
 import requests  # Added for search API calls
 
+# Import Dia TTS model
+try:
+    from dia.model import Dia
+
+    DIA_AVAILABLE = True
+except ImportError:
+    DIA_AVAILABLE = False
+    logging.warning(
+        "Dia TTS model not installed. Please install it with 'pip install git+https://github.com/nari-labs/dia.git'"
+    )
+
 # from backup_code import generate_spatial_prompt
 
 # Set up logging
@@ -30,8 +41,12 @@ logger = logging.getLogger(__name__)
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Initialize pygame mixer for audio playback
-pygame.mixer.init()
+# Initialize pygame mixer for audio playback with error handling
+try:
+    pygame.mixer.init()
+    logger.info("Pygame mixer initialized successfully")
+except Exception as e:
+    logger.error(f"Pygame mixer initialization failed: {e}")
 
 # Initialize speech recognizer with more robust settings and comments explaining each parameter
 recognizer = sr.Recognizer()
@@ -61,20 +76,35 @@ tts_queue = queue.Queue()
 tts_thread_active = False
 
 # Define global variables
-tts_type = "gtts"  # Default TTS engine
+tts_type = (
+    "dia" if DIA_AVAILABLE else "gtts"
+)  # Default TTS engine: dia if available else gtts
 tts_engine = None
-use_elevenlabs = False
-elevenlabs_api_key = None  # Add your key if using ElevenLabs
+dia_tts_model = None
 
 
-# More natural TTS with pyttsx3 (offline) or ElevenLabs (online)
+# More natural TTS with pyttsx3 (offline) or Dia (online)
 def setup_enhanced_tts():
     """Set up enhanced text-to-speech with fallback options"""
-    global tts_engine, use_elevenlabs, tts_type
+    global tts_engine, tts_type, dia_tts_model
 
-    # Configuration flags
-    use_elevenlabs = False  # Set to True to use ElevenLabs premium voices
-    elevenlabs_api_key = None  # Add your key if using ElevenLabs
+    if DIA_AVAILABLE:
+        try:
+            import torch
+
+            device = "cpu"
+            if torch.backends.mps.is_available():
+                device = "mps"
+            logger.info(f"Loading Dia TTS model on device: {device}")
+
+            dia_tts_model = Dia.from_pretrained(
+                "nari-labs/Dia-1.6B", compute_dtype="float16", device=device
+            )
+            logger.info("Dia TTS model loaded successfully")
+            tts_type = "dia"
+            return "dia"
+        except Exception as e:
+            logger.warning(f"Could not initialize Dia TTS model: {e}")
 
     # Try to set up pyttsx3 (offline TTS)
     try:
@@ -94,28 +124,6 @@ def setup_enhanced_tts():
         return "pyttsx3"
     except Exception as e:
         logger.warning(f"Could not initialize pyttsx3: {e}")
-
-    # Fall back to ElevenLabs if configured
-    if use_elevenlabs and elevenlabs_api_key:
-        try:
-            import requests
-
-            # Test the API connection
-            headers = {
-                "xi-api-key": elevenlabs_api_key,
-                "Content-Type": "application/json",
-            }
-            response = requests.get(
-                "https://api.elevenlabs.io/v1/voices", headers=headers
-            )
-            if response.status_code == 200:
-                logger.info("ElevenLabs TTS connected successfully")
-                tts_type = "elevenlabs"
-                return "elevenlabs"
-            else:
-                logger.warning(f"ElevenLabs API error: {response.status_code}")
-        except Exception as e:
-            logger.warning(f"Could not initialize ElevenLabs: {e}")
 
     # Final fallback to gTTS (already implemented)
     logger.info("Using gTTS as fallback TTS engine")
@@ -152,8 +160,8 @@ def speak_text(text, interrupt=True):
         # Add to queue based on engine type
         if tts_type == "pyttsx3":
             tts_queue.put(("pyttsx3", chunk))
-        elif tts_type == "elevenlabs":
-            tts_queue.put(("elevenlabs", chunk))
+        elif tts_type == "dia":
+            tts_queue.put(("dia", chunk))
         else:
             tts_queue.put(("gtts", chunk))
 
@@ -163,7 +171,7 @@ def speak_text(text, interrupt=True):
 # Improved TTS worker that handles multiple engines
 def tts_worker():
     """Worker thread that processes TTS requests from queue"""
-    global tts_thread_active, tts_engine, use_elevenlabs, elevenlabs_api_key
+    global tts_thread_active, tts_engine, dia_tts_model
 
     while tts_thread_active:
         try:
@@ -186,60 +194,50 @@ def tts_worker():
                     logger.error(f"pyttsx3 error: {e}")
                     # Fall through to next option
 
-            # Handle ElevenLabs (premium online TTS)
-            if engine_type == "elevenlabs" and use_elevenlabs and elevenlabs_api_key:
+            # Handle Dia TTS (online TTS)
+            if engine_type == "dia" and dia_tts_model is not None:
                 try:
-                    import requests
-
-                    # ElevenLabs API call
-                    headers = {
-                        "xi-api-key": elevenlabs_api_key,
-                        "Content-Type": "application/json",
-                    }
-
-                    data = {
-                        "text": text,
-                        "model_id": "eleven_monolingual_v1",
-                        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
-                    }
-
-                    # Using Rachel voice (change voice_id as needed)
-                    voice_id = "21m00Tcm4TlvDq8ikWAM"  # Rachel voice
-
-                    response = requests.post(
-                        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
-                        headers=headers,
-                        json=data,
-                    )
-
-                    if response.status_code == 200:
-                        # Save audio to temp file
-                        temp_file = tempfile.NamedTemporaryFile(
-                            delete=False, suffix=".mp3"
-                        )
-                        temp_filename = temp_file.name
-                        temp_file.write(response.content)
-                        temp_file.close()
-
-                        # Play with pygame
-                        pygame.mixer.music.load(temp_filename)
-                        pygame.mixer.music.play()
-                        while pygame.mixer.music.get_busy():
-                            time.sleep(0.1)
-
-                        # Clean up
-                        try:
-                            os.unlink(temp_filename)
-                        except:
-                            pass
-
-                        tts_queue.task_done()
-                        continue
+                    logger.info("Starting Dia TTS generation")
+                    # Dia requires input text with speaker tags, add [S1] prefix if missing
+                    if not text.strip().startswith(
+                        "[S1]"
+                    ) and not text.strip().startswith("[S2]"):
+                        text_to_speak = "[S1] " + text.strip()
                     else:
-                        logger.error(f"ElevenLabs API error: {response.status_code}")
-                        # Fall through to gTTS
+                        text_to_speak = text.strip()
+
+                    output = dia_tts_model.generate(
+                        text_to_speak, use_torch_compile=False, verbose=False
+                    )
+                    logger.info("Dia TTS generation completed")
+
+                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
+                    temp_filename = temp_file.name
+                    temp_file.close()
+
+                    dia_tts_model.save_audio(temp_filename, output)
+                    logger.info(f"Dia TTS audio saved to {temp_filename}")
+
+                    # Play the audio with pygame
+                    pygame.mixer.music.load(temp_filename)
+                    pygame.mixer.music.play()
+                    logger.info("Playing Dia TTS audio")
+                    while pygame.mixer.music.get_busy():
+                        time.sleep(0.1)
+                    logger.info("Finished playing Dia TTS audio")
+
+                    # Clean up the temporary file after playing
+                    try:
+                        os.unlink(temp_filename)
+                    except Exception as cleanup_error:
+                        logger.warning(
+                            f"Failed to delete temp audio file: {cleanup_error}"
+                        )
+
+                    tts_queue.task_done()
+                    continue
                 except Exception as e:
-                    logger.error(f"ElevenLabs error: {e}")
+                    logger.error(f"Dia TTS error: {e}")
                     # Fall through to gTTS
 
             # Fallback to gTTS (already implemented)
@@ -1652,7 +1650,7 @@ with demo:
         voice_map = {
             "Default Female": {"engine": "pyttsx3", "voice_id": 1},
             "Default Male": {"engine": "pyttsx3", "voice_id": 0},
-            "Premium (ElevenLabs)": {"engine": "elevenlabs", "voice_id": "default"},
+            "Premium (Dia)": {"engine": "dia", "voice_id": "default"},
         }
 
         tts_voice_type = voice_map.get(
@@ -1737,6 +1735,7 @@ with demo:
     atexit.register(on_close)
 
 if __name__ == "__main__":
+    setup_enhanced_tts()  # Initialize TTS engine, including Dia if available
     start_tts_thread()  # Make sure TTS is ready
     logger.info("Starting Spatial Reasoning Conversation Assistant...")
 
