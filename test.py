@@ -93,7 +93,9 @@ def setup_enhanced_tts():
             import torch
 
             device = "cpu"
-            if torch.backends.mps.is_available():
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif torch.backends.mps.is_available():
                 device = "mps"
             logger.info(f"Loading Dia TTS model on device: {device}")
 
